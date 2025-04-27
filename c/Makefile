@@ -7,7 +7,7 @@ OBJS := cstruct.o test_cstruct.o unity/src/unity.o
 LDFLAGS := -lm
 
 # カバレッジ測定用のフラグ
-COVERAGE_FLAGS := --coverage
+COVERAGE_FLAGS := -fprofile-arcs -ftest-coverage
 
 .PHONY: all clean coverage coverage-clean test
 
@@ -24,14 +24,13 @@ test: $(TARGET)
 	./$(TARGET)
 
 # カバレッジ測定用のターゲット
-coverage: CFLAGS += $(COVERAGE_FLAGS)
 coverage: coverage-clean
-	$(CC) $(CFLAGS) -c cstruct.c -o cstruct.o
-	$(CC) $(CFLAGS) -c test_cstruct.c -o test_cstruct.o
-	$(CC) $(CFLAGS) -c unity/src/unity.c -o unity/src/unity.o
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(COVERAGE_FLAGS) -O0 -g -c cstruct.c -o cstruct.o
+	$(CC) $(CFLAGS) $(COVERAGE_FLAGS) -O0 -g -c test_cstruct.c -o test_cstruct.o
+	$(CC) $(CFLAGS) $(COVERAGE_FLAGS) -O0 -g -c unity/src/unity.c -o unity/src/unity.o
+	$(CC) $(CFLAGS) $(COVERAGE_FLAGS) -O0 -g -o $(TARGET) $(OBJS) $(LDFLAGS)
 	./$(TARGET)
-	gcov cstruct.c
+	gcov -b cstruct.c
 
 coverage-clean:
 	rm -f $(TARGET) $(OBJS)
