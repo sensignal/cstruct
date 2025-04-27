@@ -448,7 +448,7 @@ void test_format_string_parsing_errors(void) {
     
     // 数値オーバーフロー（非常に大きな数値）
     // SIZE_MAXに近い大きな数値を生成するフォーマット文字列
-    char huge_format[100] = "x999999999999999999999";
+    char huge_format[100] = "x18446744073709551617"; // 64bit SIZE_MAX + 1
     ret = cstruct_pack(buf, sizeof(buf), huge_format);
     TEST_ASSERT_NULL(ret);
     
