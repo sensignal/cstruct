@@ -1,0 +1,4 @@
+[submodule "c/unity"]
+	path = c/unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
+	ignore = dirty
