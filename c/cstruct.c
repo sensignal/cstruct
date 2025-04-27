@@ -35,14 +35,39 @@ static const size_t CSTRUCT_DIV10_THRESHOLD = SIZE_MAX / 10;
 static const size_t CSTRUCT_DIV10_MAX_LAST_DIGIT = SIZE_MAX % 10;
 
 /**
+ * @brief バイト順をそのままコピーする（フォワードコピー）
+ * @param dst 格納先バッファ
+ * @param src 元データ
+ * @param size バイトサイズ
+ */
+static inline void cstruct_store_fw(uint8_t *dst, const void *src, size_t size) {
+    const uint8_t *s = (const uint8_t *)src;
+    for (size_t i = 0; i < size; ++i) dst[i] = s[i];
+}
+
+/**
+ * @brief バイト順を逆転してコピーする（リバースコピー）
+ * @param dst 格納先バッファ
+ * @param src 元データ
+ * @param size バイトサイズ
+ */
+static inline void cstruct_store_rev(uint8_t *dst, const void *src, size_t size) {
+    const uint8_t *s = (const uint8_t *)src;
+    for (size_t i = 0; i < size; ++i) dst[i] = s[size - 1 - i];
+}
+
+/**
  * @brief リトルエンディアン形式でデータを格納する
  * @param dst 格納先バッファ
  * @param src 元データ
  * @param size バイトサイズ
  */
 static void cstruct_store_le(uint8_t *dst, const void *src, size_t size) {
-    const uint8_t *s = (const uint8_t *)src;
-    for (size_t i = 0; i < size; ++i) dst[i] = s[i];
+#if CSTRUCT_IS_BIG_ENDIAN
+    cstruct_store_rev(dst, src, size);  // ビッグエンディアン環境ではバイト順を逆転
+#else
+    cstruct_store_fw(dst, src, size);   // リトルエンディアン環境ではそのまま
+#endif
 }
 
 /**
@@ -52,8 +77,33 @@ static void cstruct_store_le(uint8_t *dst, const void *src, size_t size) {
  * @param size バイトサイズ
  */
 static void cstruct_store_be(uint8_t *dst, const void *src, size_t size) {
-    const uint8_t *s = (const uint8_t *)src;
-    for (size_t i = 0; i < size; ++i) dst[i] = s[size - 1 - i];
+#if CSTRUCT_IS_BIG_ENDIAN
+    cstruct_store_fw(dst, src, size);   // ビッグエンディアン環境ではそのまま
+#else
+    cstruct_store_rev(dst, src, size);  // リトルエンディアン環境ではバイト順を逆転
+#endif
+}
+
+/**
+ * @brief バイト順をそのままコピーする（フォワードコピー）
+ * @param dst 読み出し先バッファ
+ * @param src 元データ
+ * @param size バイトサイズ
+ */
+static inline void cstruct_load_fw(void *dst, const uint8_t *src, size_t size) {
+    uint8_t *d = (uint8_t *)dst;
+    for (size_t i = 0; i < size; ++i) d[i] = src[i];
+}
+
+/**
+ * @brief バイト順を逆転してコピーする（リバースコピー）
+ * @param dst 読み出し先バッファ
+ * @param src 元データ
+ * @param size バイトサイズ
+ */
+static inline void cstruct_load_rev(void *dst, const uint8_t *src, size_t size) {
+    uint8_t *d = (uint8_t *)dst;
+    for (size_t i = 0; i < size; ++i) d[i] = src[size - 1 - i];
 }
 
 /**
@@ -63,8 +113,11 @@ static void cstruct_store_be(uint8_t *dst, const void *src, size_t size) {
  * @param size バイトサイズ
  */
 static void cstruct_load_le(void *dst, const uint8_t *src, size_t size) {
-    uint8_t *d = (uint8_t *)dst;
-    for (size_t i = 0; i < size; ++i) d[i] = src[i];
+#if CSTRUCT_IS_BIG_ENDIAN
+    cstruct_load_rev(dst, src, size);  // ビッグエンディアン環境ではバイト順を逆転
+#else
+    cstruct_load_fw(dst, src, size);   // リトルエンディアン環境ではそのまま
+#endif
 }
 
 /**
@@ -74,8 +127,11 @@ static void cstruct_load_le(void *dst, const uint8_t *src, size_t size) {
  * @param size バイトサイズ
  */
 static void cstruct_load_be(void *dst, const uint8_t *src, size_t size) {
-    uint8_t *d = (uint8_t *)dst;
-    for (size_t i = 0; i < size; ++i) d[i] = src[size - 1 - i];
+#if CSTRUCT_IS_BIG_ENDIAN
+    cstruct_load_fw(dst, src, size);   // ビッグエンディアン環境ではそのまま
+#else
+    cstruct_load_rev(dst, src, size);  // リトルエンディアン環境ではバイト順を逆転
+#endif
 }
 
 /**
@@ -1017,7 +1073,7 @@ const void *cstruct_unpack_v(const void *src, size_t srclen, const char *fmt, va
 
         switch (tok.type) {
             case CSTRUCT_TYPE_PADDING:
-                in += tok.size; // パディングはスキップ
+                in = cstruct_pack_padding(in, tok.size);
                 break;
             case CSTRUCT_TYPE_FLOAT32: {
                 float *f = va_arg(args, float *);
