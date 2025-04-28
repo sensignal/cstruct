@@ -1,4 +1,4 @@
-name: PR Test
+name: Test
 
 on:
   pull_request:
@@ -17,7 +17,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y gcc make
-      
+        curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+        echo "$HOME/bin" >> $GITHUB_PATH      
     - name: Build and run tests
       run: |
         cd c
