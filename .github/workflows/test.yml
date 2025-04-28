@@ -23,3 +23,6 @@ jobs:
         cd c
         make
         ./test_cstruct
+        cd ../
+        ./scripts/test_arduino.sh
+
