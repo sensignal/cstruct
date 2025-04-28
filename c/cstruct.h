@@ -165,7 +165,7 @@ const void *cstruct_get_ptr(const void *src, size_t srclen, const char *fmt, siz
  * @param size パディングサイズ
  * @return パック後の次の位置
  */
-void *cstruct_pack_padding(void *dst, size_t size);
+void *cstruct_pack_padding(const void *dst, size_t size);
 
 /**
  * @brief 型別パック関数 - 8ビット符号付き整数

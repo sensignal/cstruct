@@ -299,7 +299,7 @@ static const char *parse_token(const char *fmt_in, cstruct_token_t *tok_out, cst
  * @param size パディングサイズ
  * @return パック後の次の位置
  */
-void *cstruct_pack_padding(void *dst, size_t size) {
+void *cstruct_pack_padding(const void *dst, size_t size) {
     return (uint8_t *)dst + size;
 }
 

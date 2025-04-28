@@ -76,3 +76,6 @@ obj/
 vendor/
 /dist
 /c/test_cstruct
+_arduino-data/
+_arduino-downloads/
+_arduino-user/

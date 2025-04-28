@@ -113,7 +113,7 @@ void packSensorData() {
   
   // Display packed binary data
   Serial.println("\n--- Packed Binary Data ---");
-  Serial.print("Size: "); Serial.print(result - (void*)packetBuffer); Serial.println(" bytes");
+  Serial.print("Size: "); Serial.print((uint8_t*)result - packetBuffer); Serial.println(" bytes");
   Serial.print("Data (hexadecimal): ");
   
   for (int i = 0; i < 15; i++) {  // 2 + 1 + 4 + 2 + 2 + 2 + 2 = 15 bytes
