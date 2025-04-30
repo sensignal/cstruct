@@ -13,6 +13,17 @@ jobs:
       with:
         submodules: 'recursive'  # サブモジュールを再帰的に取得
       
+    - name: Cache Arduino directories
+      uses: actions/cache@v3
+      with:
+        path: |
+          _arduino-data
+          _arduino-downloads
+          _arduino-user
+        key: ${{ runner.os }}-arduino-${{ hashFiles('scripts/test_arduino.sh') }}
+        restore-keys: |
+          ${{ runner.os }}-arduino-
+      
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -26,4 +37,3 @@ jobs:
         ./test_cstruct
         cd ../
         ./scripts/test_arduino.sh
-
