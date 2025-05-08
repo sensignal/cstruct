@@ -156,3 +156,28 @@ if (ptr != NULL) {
     printf("3番目の要素（float）: %f\n", value);
 }
 ```
+
+#### 配列とポインタ取得
+
+`cstruct_get_ptr`関数では、配列指定（例：`3b`）は単一のフィールドとして扱われます。つまり、配列全体が1つのインデックスとしてカウントされます。
+
+```c
+// 配列を含むフォーマット文字列でのポインタ取得
+const void *ptr;
+
+// フォーマット文字列: "b3hf" (8ビット整数、16ビット整数の配列[3要素]、32ビット浮動小数点数)
+// インデックス0: 8ビット整数へのポインタ
+ptr = cstruct_get_ptr(buffer, sizeof(buffer), "b3hf", 0);
+
+// インデックス1: 16ビット整数の配列（3要素）へのポインタ
+// 配列全体が1つのフィールドとしてカウントされる
+ptr = cstruct_get_ptr(buffer, sizeof(buffer), "b3hf", 1);
+
+// インデックス2: 32ビット浮動小数点数へのポインタ
+ptr = cstruct_get_ptr(buffer, sizeof(buffer), "b3hf", 2);
+
+// インデックス3以上: NULL（範囲外）
+ptr = cstruct_get_ptr(buffer, sizeof(buffer), "b3hf", 3); // NULLが返される
+```
+
+配列内の特定の要素にアクセスするには、返されたポインタからオフセットを計算する必要があります。

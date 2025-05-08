@@ -4,7 +4,8 @@ An Arduino library for packing and unpacking binary data with a simple format st
 
 ## Features
 
-- Supports various data types (8/16/32/64-bit integers, floating point numbers, etc.)
+- Supports various data types (8/16/32/64-bit integers, floating point numbers, strings, etc.)
+- Supports array processing for all data types
 - Supports IEEE754 half precision (16-bit) floating point numbers
 - Supports both little-endian and big-endian byte orders
 - Simple format string syntax for packing and unpacking
@@ -76,21 +77,67 @@ Endianness can be switched at any point in the format string and applies to all 
 | e      | float | 2 | IEEE754 half precision (16-bit floating point) |
 | f      | float | 4 | IEEE754 float32 (32-bit floating point) |
 | d      | double | 8 | IEEE754 float64 (64-bit floating point) |
+| s      | char* | N | String (N bytes). N is optional (defaults to 1 if omitted). |
+| x      | padding | N | N bytes of padding. N is optional (defaults to 1 if omitted). |
 
-#### Special Fields
+#### Array Notation
 
-| Symbol | Type | Size | Description |
-|--------|------|------|-------------|
-| xN     | padding | N bytes | N bytes of padding. N is optional (defaults to 1 if omitted) and must be greater than 0. |
+All data types can be repeated using a numeric prefix. For example, `3b` means an array of three 8-bit signed integers.
+
+When using arrays, you only need to pass a single argument for the entire array. The library will handle reading or writing multiple elements based on the format string.
+
+```cpp
+// Example: Packing and unpacking arrays
+int8_t int8_array[3] = {-1, -2, -3};
+int8_t unpacked_array[3];
+
+// Pack an array of three 8-bit integers
+// Note: Only one argument (the array) is needed
+CStruct::pack(buffer, sizeof(buffer), "3b", int8_array);
+
+// Unpack an array of three 8-bit integers
+// Note: Only one argument (the array) is needed
+CStruct::unpack(buffer, sizeof(buffer), "3b", unpacked_array);
+```
+
+#### String Handling
+
+When using the string specifier `s`, the specified number of bytes are copied. When unpacking, a null terminator is added after the copied data. Therefore, the user must provide a buffer that is at least N+1 bytes in size.
+
+```cpp
+// Example: Packing and unpacking strings
+char str[] = "Hello";
+char unpacked_str[6]; // 5 bytes + null terminator
+
+// Pack a 5-byte string
+CStruct::pack(buffer, sizeof(buffer), "5s", str);
+
+// Unpack a 5-byte string
+CStruct::unpack(buffer, sizeof(buffer), "5s", unpacked_str);
+// unpacked_str now contains "Hello" with a null terminator at position 5
+```
+
+#### Padding Behavior
 
 When using the padding specifier `x`, the pointer is advanced by N bytes, but no actual write operation is performed. The memory content in the padding area remains unchanged and is skipped.
+
+When using the `pack` and `unpack` functions, no arguments are needed for padding. For example, with the format string `"I4xI"`, the `pack` function only requires two `uint32_t` values as arguments.
 
 ## Examples
 
 The library includes the following examples:
 
-1. **BasicUsage**: Demonstrates basic packing and unpacking operations
-2. **SensorDataPacket**: Demonstrates packing and unpacking sensor data as a binary packet
+### Basic Examples
+
+1. **BasicUsage**: Demonstrates basic operations including data types, strings, arrays, endianness control, and half-precision floating point. Ideal for first-time users of the library.
+
+### Advanced Examples
+
+2. **StringAndArrayHandling**: Focuses on string and array processing. Shows how to handle multiple strings and arrays of various types.
+
+3. **SensorDataPacket**: A practical example of packing and unpacking sensor data as binary packets. Suitable for data transmission via serial communication.
+
+4. **AdvancedUsage**: Demonstrates advanced features including padding usage, complex data structures, and sensor data packet formatting. Note that this example may require more memory than available on Arduino Uno.
 
 ## License
 

@@ -82,12 +82,12 @@ void tearDown(void) {
 
 void test_normal_pack_unpack(void) {
     // 正常パック（エンディアン混在）- パディングを含む
-    end = cstruct_pack(buf, sizeof(buf), "bBhHiIqQefdx0x4>Tt",
+    end = cstruct_pack(buf, sizeof(buf), "bBhHiIqQefd0x4x>Tt",
         i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64, u128, i128);
     TEST_ASSERT_NOT_NULL(end);
 
     // 正常アンパック - パディングを含む
-    ret = cstruct_unpack(buf, sizeof(buf), "bBhHiIqQefdx0x4>Tt",
+    ret = cstruct_unpack(buf, sizeof(buf), "bBhHiIqQefd0x4x>Tt",
         &ri8, &ru8, &ri16, &ru16, &ri32, &ru32, &ri64, &ru64,
         &rf16, &rf32, &rf64, ru128, ri128);
     TEST_ASSERT_NOT_NULL(ret);
@@ -112,12 +112,12 @@ void test_normal_pack_unpack(void) {
 
 void test_endian_reversed_pack_unpack(void) {
     // 正常パック（エンディアン指定を切り替え）- パディングを含む
-    end = cstruct_pack(buf, sizeof(buf), ">bBhHiIqQefdx3x4<Tt",
+    end = cstruct_pack(buf, sizeof(buf), ">bBhHiIqQefd3x4x<Tt",
         i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64, u128, i128);
     TEST_ASSERT_NOT_NULL(end);
 
     // 正常アンパック - エンディアン指定を切り替え
-    ret = cstruct_unpack(buf, sizeof(buf), ">bBhHiIqQefdx3x4<Tt",
+    ret = cstruct_unpack(buf, sizeof(buf), ">bBhHiIqQefd3x4x<Tt",
         &ri8, &ru8, &ri16, &ru16, &ri32, &ru32, &ri64, &ru64,
         &rf16, &rf32, &rf64, ru128, ri128);
     TEST_ASSERT_NOT_NULL(ret);
@@ -207,12 +207,12 @@ void test_padding(void) {
     // 0xff埋め
     memset(buf, 0xFF, sizeof(buf));
     
-    // "x4" - 4バイトのパディング
-    end = cstruct_pack(buf, sizeof(buf), "Ix4I", u32, u32);
+    // "4x" - 4バイトのパディング
+    end = cstruct_pack(buf, sizeof(buf), "I4xI", u32, u32);
     TEST_ASSERT_NOT_NULL(end);
     
     // アンパック
-    ret = cstruct_unpack(buf, sizeof(buf), "Ix4I", &ru32, &ru32);
+    ret = cstruct_unpack(buf, sizeof(buf), "I4xI", &ru32, &ru32);
     TEST_ASSERT_NOT_NULL(ret);
     
     // パディング部分が無変更であることを確認
@@ -231,8 +231,8 @@ void test_large_padding(void) {
     // 0xff埋め
     memset(buf, 0xFF, sizeof(buf));
     
-    // "x100" - 100バイトのパディング
-    end = cstruct_pack(buf, sizeof(buf), "x100");
+    // "100x" - 100バイトのパディング
+    end = cstruct_pack(buf, sizeof(buf), "100x");
     TEST_ASSERT_NOT_NULL(end);
     
     // パディング部分が無変更であることを確認
@@ -248,8 +248,8 @@ void test_multiple_padding(void) {
     // 0xff埋め
     memset(buf, 0xFF, sizeof(buf));
     
-    // "x2x3x4" - 連続した複数のパディング（合計9バイト）
-    end = cstruct_pack(buf, sizeof(buf), "x2x3x4");
+    // "2x3x4x" - 連続した複数のパディング（合計59バイト）
+    end = cstruct_pack(buf, sizeof(buf), "2x3x4x");
     TEST_ASSERT_NOT_NULL(end);
     
     // パディング部分が無変更であることを確認
@@ -258,7 +258,7 @@ void test_multiple_padding(void) {
     }
     
     // アンパック
-    ret = cstruct_unpack(buf, sizeof(buf), "x2x3x4");
+    ret = cstruct_unpack(buf, sizeof(buf), "2x3x4x");
     TEST_ASSERT_NOT_NULL(ret);
 }
 
@@ -267,8 +267,8 @@ void test_padding_only(void) {
     uint8_t test_buf[32];
     memset(test_buf, 0xFF, sizeof(test_buf));
     
-    // "x16" - 16バイトのパディングのみ
-    end = cstruct_pack(test_buf, sizeof(test_buf), "x16");
+    // "16x" - 16バイトのパディングのみ
+    end = cstruct_pack(test_buf, sizeof(test_buf), "16x");
     TEST_ASSERT_NOT_NULL(end);
     
     // パディング部分が無変更であることを確認（0xFFのまま）
@@ -277,7 +277,7 @@ void test_padding_only(void) {
     }
     
     // パディングのみのフォーマットでアンパック
-    ret = cstruct_unpack(test_buf, sizeof(test_buf), "x16");
+    ret = cstruct_unpack(test_buf, sizeof(test_buf), "16x");
     TEST_ASSERT_NOT_NULL(ret);
 }
 
@@ -300,29 +300,29 @@ void test_get_ptr(void) {
     memset(buf, 0xFF, sizeof(buf));
     
     // テスト用データをパック - パディングを含む
-    end = cstruct_pack(buf, sizeof(buf), "bBhHiIqQefdx4",
+    end = cstruct_pack(buf, sizeof(buf), "bBhHiIqQefd4x",
         i8, u8, i16, u16, i32, u32, i64, u64, f16, f32, f64);
     TEST_ASSERT_NOT_NULL(end);
     
     // 各フィールドのポインタを取得して検証
     
     // INT8フィールド（インデックス0）
-    const void *field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefdx4", 0);
+    const void *field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefd4x", 0);
     TEST_ASSERT_NOT_NULL(field_ptr);
     TEST_ASSERT_EQUAL_INT8(i8, *(const int8_t *)field_ptr);
     
     // UINT8フィールド（インデックス1）
-    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefdx4", 1);
+    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefd4x", 1);
     TEST_ASSERT_NOT_NULL(field_ptr);
     TEST_ASSERT_EQUAL_UINT8(u8, *(const uint8_t *)field_ptr);
     
     // INT16フィールド（インデックス2）
-    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefdx4", 2);
+    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefd4x", 2);
     TEST_ASSERT_NOT_NULL(field_ptr);
     // エンディアンの問題があるため、直接比較はしない
     
     // パディングフィールド - パディングはカウントされないため、インデックスを調整
-    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefdx4", 11);
+    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefd4x", 11);
     TEST_ASSERT_NOT_NULL(field_ptr);
     // パディングは無変化のはず（0xFFのまま）
     const uint8_t *padding = (const uint8_t *)field_ptr;
@@ -331,7 +331,7 @@ void test_get_ptr(void) {
     }
     
     // 存在しないフィールドインデックス
-    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefdx4", 100);
+    field_ptr = cstruct_get_ptr(buf, sizeof(buf), "bBhHiIqQefd4x", 100);
     TEST_ASSERT_NULL(field_ptr);
     
     // バッファサイズ不足
@@ -573,6 +573,130 @@ void test_denormalized_large_mantissa(void) {
     TEST_ASSERT_EQUAL_UINT16(0x200, half_mantissa);
 }
 
+// 文字列処理のテスト
+void test_string_handling(void) {
+    // テスト用の文字列
+    char test_str1[] = "Hello";
+    char test_str2[] = "This is a longer string that will be truncated";
+    char unpacked_str1[6] = {0};  // 5バイトの文字列 + ヌル終端用の1バイト
+    char unpacked_str2[11] = {0}; // 10バイトの文字列 + ヌル終端用の1バイト
+    
+    // 文字列をパックする
+    end = cstruct_pack(buf, sizeof(buf), "5s10s", test_str1, test_str2);
+    TEST_ASSERT_NOT_NULL(end);
+    
+    // 文字列をアンパックする
+    ret = cstruct_unpack(buf, sizeof(buf), "5s10s", unpacked_str1, unpacked_str2);
+    TEST_ASSERT_NOT_NULL(ret);
+    
+    // 値の検証 - バイナリデータの全バイトを比較
+    TEST_ASSERT_EQUAL_STRING_LEN(test_str1, unpacked_str1, 5);
+    TEST_ASSERT_EQUAL_STRING_LEN(test_str2, unpacked_str2, 10);
+    
+    // 文字列が正しくヌル終端されていることを確認
+    TEST_ASSERT_EQUAL_UINT8(0, unpacked_str1[5]); // バッファの最後にヌル終端
+    TEST_ASSERT_EQUAL_UINT8(0, unpacked_str2[10]); // バッファの最後にヌル終端
+    
+    // バッファが正しくヌル埋めされているかを確認するテスト
+    char test_short[] = "AB";
+    char large_buffer[10] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // 0xFFで初期化
+    
+    // 2バイトの文字列を2sとしてパック
+    end = cstruct_pack(buf, sizeof(buf), "2s", test_short);
+    TEST_ASSERT_NOT_NULL(end);
+    
+    // 10バイトのバッファにアンパック
+    ret = cstruct_unpack(buf, sizeof(buf), "2s", large_buffer);
+    TEST_ASSERT_NOT_NULL(ret);
+    
+    // 最初の2バイトが正しくコピーされていることを確認
+    TEST_ASSERT_EQUAL_UINT8('A', large_buffer[0]);
+    TEST_ASSERT_EQUAL_UINT8('B', large_buffer[1]);
+    
+    // 3バイト目にヌル終端が追加されていることを確認
+    TEST_ASSERT_EQUAL_UINT8(0, large_buffer[2]);
+    
+    // 残りのバッファは変更されていないことを確認
+    for (int i = 3; i < 10; i++) {
+        TEST_ASSERT_EQUAL_UINT8(0xFF, large_buffer[i]);
+    }
+}
+
+// 配列処理のテスト
+void test_array_handling(void) {
+    // テスト用の配列データ
+    int8_t i8_array[3] = {-1, -2, -3};
+    uint8_t u8_array[4] = {1, 2, 3, 4};
+    int16_t i16_array[2] = {-1000, -2000};
+    uint16_t u16_array[3] = {1000, 2000, 3000};
+    float f32_array[2] = {1.5f, 2.5f};
+    
+    // アンパック用の配列
+    int8_t ri8_array[3] = {0};
+    uint8_t ru8_array[4] = {0};
+    int16_t ri16_array[2] = {0};
+    uint16_t ru16_array[3] = {0};
+    float rf32_array[2] = {0.0f};
+    
+    // 配列をパックする
+    end = cstruct_pack(buf, sizeof(buf), "3b4B2h3H2f", 
+                      i8_array, u8_array, i16_array, u16_array, f32_array);
+    TEST_ASSERT_NOT_NULL(end);
+    
+    // 配列をアンパックする
+    ret = cstruct_unpack(buf, sizeof(buf), "3b4B2h3H2f", 
+                        ri8_array, ru8_array, ri16_array, ru16_array, rf32_array);
+    TEST_ASSERT_NOT_NULL(ret);
+    
+    // 値の検証
+    for (int i = 0; i < 3; i++) {
+        if (i < 3) TEST_ASSERT_EQUAL_INT8(i8_array[i], ri8_array[i]);
+        if (i < 4) TEST_ASSERT_EQUAL_UINT8(u8_array[i], ru8_array[i]);
+        if (i < 2) TEST_ASSERT_EQUAL_INT16(i16_array[i], ri16_array[i]);
+        if (i < 3) TEST_ASSERT_EQUAL_UINT16(u16_array[i], ru16_array[i]);
+        if (i < 2) TEST_ASSERT_TRUE(float_equals(f32_array[i], rf32_array[i], 0.0001f));
+    }
+}
+
+// エンディアン混在の配列処理テスト
+void test_array_with_endianness(void) {
+    // テスト用の配列データ
+    int16_t i16_array[3] = {-1000, -2000, -3000};
+    int32_t i32_array[2] = {-100000, -200000};
+    
+    // アンパック用の配列
+    int16_t ri16_array[3] = {0};
+    int32_t ri32_array[2] = {0};
+    
+    // 配列をパックする（リトルエンディアン）
+    end = cstruct_pack(buf, sizeof(buf), "<3h2i", i16_array, i32_array);
+    TEST_ASSERT_NOT_NULL(end);
+    
+    // 配列をアンパックする（リトルエンディアン）
+    ret = cstruct_unpack(buf, sizeof(buf), "<3h2i", ri16_array, ri32_array);
+    TEST_ASSERT_NOT_NULL(ret);
+    
+    // 値の検証
+    for (int i = 0; i < 3; i++) {
+        if (i < 3) TEST_ASSERT_EQUAL_INT16(i16_array[i], ri16_array[i]);
+        if (i < 2) TEST_ASSERT_EQUAL_INT32(i32_array[i], ri32_array[i]);
+    }
+    
+    // 配列をパックする（ビッグエンディアン）
+    end = cstruct_pack(buf, sizeof(buf), ">3h2i", i16_array, i32_array);
+    TEST_ASSERT_NOT_NULL(end);
+    
+    // 配列をアンパックする（ビッグエンディアン）
+    ret = cstruct_unpack(buf, sizeof(buf), ">3h2i", ri16_array, ri32_array);
+    TEST_ASSERT_NOT_NULL(ret);
+    
+    // 値の検証
+    for (int i = 0; i < 3; i++) {
+        if (i < 3) TEST_ASSERT_EQUAL_INT16(i16_array[i], ri16_array[i]);
+        if (i < 2) TEST_ASSERT_EQUAL_INT32(i32_array[i], ri32_array[i]);
+    }
+}
+
 // メイン関数
 int main(void) {
     UNITY_BEGIN();
@@ -596,6 +720,9 @@ int main(void) {
     RUN_TEST(test_argument_count);
     RUN_TEST(test_half_precision_edge_cases);
     RUN_TEST(test_denormalized_large_mantissa);
+    RUN_TEST(test_string_handling);
+    RUN_TEST(test_array_handling);
+    RUN_TEST(test_array_with_endianness);
     
     return UNITY_END();
 }

@@ -98,14 +98,14 @@ FAILED_EXAMPLES=""
 
 for EXAMPLE in $EXAMPLES; do
     EXAMPLE_NAME=$(basename "$(dirname "$EXAMPLE")")
-    echo -e "${YELLOW}サンプル「$EXAMPLE_NAME」をコンパイル中...${NC}"
+    echo -e "${YELLOW}サンプル '$EXAMPLE_NAME' をコンパイル中...${NC}"
     
     # スケッチをコンパイル（アップロードはしない）
     if arduino-cli compile --libraries="$ARDUINO_USER_DIR/libraries" --fqbn "$BOARD" "$EXAMPLE"; then
-        echo -e "${GREEN}サンプル「$EXAMPLE_NAME」のコンパイルに成功しました。${NC}"
+        echo -e "${GREEN}サンプル '$EXAMPLE_NAME' のコンパイルに成功しました。${NC}"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     else
-        echo -e "${RED}サンプル「$EXAMPLE_NAME」のコンパイルに失敗しました。${NC}"
+        echo -e "${RED}サンプル '$EXAMPLE_NAME' のコンパイルに失敗しました。${NC}"
         FAILED_EXAMPLES="$FAILED_EXAMPLES\n - $EXAMPLE_NAME"
     fi
 done
