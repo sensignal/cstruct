@@ -128,6 +128,15 @@ void* CStruct::packFloat64BE(void* dst, double value) {
     return cstruct_pack_float64_be(dst, value);
 }
 
+// Implementation of string handling functions
+void* CStruct::packString(void* dst, const char* value, size_t size) {
+    return cstruct_pack_string(dst, value, size);
+}
+
+const void* CStruct::unpackString(const void* src, char* value, size_t size) {
+    return cstruct_unpack_string(src, value, size);
+}
+
 // Implementation of type-specific unpack functions
 const void* CStruct::unpackInt8(const void* src, int8_t* value) {
     return cstruct_unpack_int8(src, value);

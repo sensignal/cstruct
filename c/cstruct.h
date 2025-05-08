@@ -70,7 +70,8 @@ typedef enum {
     CSTRUCT_TYPE_FLOAT16,  /**< 16ビット浮動小数点数 (IEEE754 half precision) */
     CSTRUCT_TYPE_FLOAT32,  /**< 32ビット浮動小数点数 (IEEE754 single precision) */
     CSTRUCT_TYPE_FLOAT64,  /**< 64ビット浮動小数点数 (IEEE754 double precision) */
-    CSTRUCT_TYPE_PADDING   /**< パディング（0埋め） */
+    CSTRUCT_TYPE_PADDING,  /**< パディング（0埋め） */
+    CSTRUCT_TYPE_STRING    /**< 文字列 */
 } cstruct_type_t;
 
 /**
@@ -90,6 +91,7 @@ typedef struct {
     cstruct_type_t type;    /**< データ型 */
     cstruct_endian_t endian; /**< エンディアン */
     size_t size;           /**< サイズ（バイト数） */
+    size_t count;          /**< 繰り返し回数 */
 } cstruct_token_t;
 
 /**
@@ -165,7 +167,7 @@ const void *cstruct_get_ptr(const void *src, size_t srclen, const char *fmt, siz
  * @param size パディングサイズ
  * @return パック後の次の位置
  */
-void *cstruct_pack_padding(const void *dst, size_t size);
+void *cstruct_pack_padding(void *dst, size_t size);
 
 /**
  * @brief 型別パック関数 - 8ビット符号付き整数
@@ -550,6 +552,24 @@ const void *cstruct_unpack_float64_le(const void *src, double *value);
  * @return アンパック後の次の位置
  */
 const void *cstruct_unpack_float64_be(const void *src, double *value);
+
+/**
+ * @brief 型別パック関数 - 文字列
+ * @param dst 出力先バッファ
+ * @param value パックする文字列
+ * @param size 文字列の最大サイズ
+ * @return パック後の次の位置
+ */
+void *cstruct_pack_string(void *dst, const char *value, size_t size);
+
+/**
+ * @brief 型別アンパック関数 - 文字列
+ * @param src 入力元バッファ
+ * @param value アンパックした文字列を格納する変数へのポインタ
+ * @param size 文字列の最大サイズ
+ * @return アンパック後の次の位置
+ */
+const void *cstruct_unpack_string(const void *src, char *value, size_t size);
 
 #ifdef __cplusplus
 }

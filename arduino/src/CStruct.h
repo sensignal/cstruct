@@ -419,6 +419,24 @@ public:
      */
     static const void* unpackFloat64BE(const void* src, double* value);
 
+    /**
+     * @brief Type-specific pack function - String
+     * @param dst Destination buffer
+     * @param value String to pack
+     * @param size Size of the string to pack
+     * @return Pointer to the next position after packing
+     */
+    static void* packString(void* dst, const char* value, size_t size);
+
+    /**
+     * @brief Type-specific unpack function - String
+     * @param src Source buffer
+     * @param value Pointer to store unpacked string
+     * @param size Size of the string to unpack
+     * @return Pointer to the next position after unpacking
+     */
+    static const void* unpackString(const void* src, char* value, size_t size);
+
 private:
     // Internal implementation functions and variables are defined here
 };

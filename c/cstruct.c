@@ -246,14 +246,34 @@ static float cstruct_half_to_float(uint16_t h) {
  */
 static const char *parse_token(const char *fmt_in, cstruct_token_t *tok_out, cstruct_endian_t *current_endian) {
     const char *p = fmt_in;
-
+    
+    // エンディアン指定子の処理
     while (*p) {
         if (*p == '<') { *current_endian = CSTRUCT_ENDIAN_LITTLE; p++; continue; }
         if (*p == '>') { *current_endian = CSTRUCT_ENDIAN_BIG; p++; continue; }
-
+        
+        // 初期化
         tok_out->endian = *current_endian;
         tok_out->size = 0;
-
+        tok_out->count = 1; // デフォルトの繰り返し回数は1
+        
+        // 数値（繰り返し回数）の解析
+        if (isdigit((unsigned char)*p)) {
+            size_t count = 0;
+            while (*p && isdigit((unsigned char)*p)) {
+                int digit = *p - '0';
+                if (count > CSTRUCT_DIV10_THRESHOLD ||
+                    (count == CSTRUCT_DIV10_THRESHOLD && (size_t)digit > CSTRUCT_DIV10_MAX_LAST_DIGIT)) {
+                    return NULL;
+                }
+                count = count * 10 + digit;
+                p++;
+            }
+            if (count == 0) count = 1; // 0は1として扱う
+            tok_out->count = count;
+        }
+        
+        // 型指定子の処理
         switch (*p) {
             case 'b': tok_out->type = CSTRUCT_TYPE_INT8; tok_out->size = 1; return p + 1;
             case 'B': tok_out->type = CSTRUCT_TYPE_UINT8; tok_out->size = 1; return p + 1;
@@ -268,27 +288,14 @@ static const char *parse_token(const char *fmt_in, cstruct_token_t *tok_out, cst
             case 'e': tok_out->type = CSTRUCT_TYPE_FLOAT16; tok_out->size = 2; return p + 1;
             case 'f': tok_out->type = CSTRUCT_TYPE_FLOAT32; tok_out->size = 4; return p + 1;
             case 'd': tok_out->type = CSTRUCT_TYPE_FLOAT64; tok_out->size = 8; return p + 1;
-            case 'x': {
-                tok_out->type = CSTRUCT_TYPE_PADDING;
-                p++;
-                size_t val = 0;
-                while (*p && isdigit((unsigned char)*p)) {
-                    int digit = *p - '0';
-                    if (val > CSTRUCT_DIV10_THRESHOLD ||
-                        (val == CSTRUCT_DIV10_THRESHOLD && (size_t)digit > CSTRUCT_DIV10_MAX_LAST_DIGIT)) {
-                        return NULL;
-                    }
-                    val = val * 10 + digit;
-                    p++;
-                }
-                if (val == 0) val = 1;
-                tok_out->size = val;
-                return p;
-            }
+            case 's': tok_out->type = CSTRUCT_TYPE_STRING; tok_out->size = tok_out->count; tok_out->count = 1; return p + 1;
+            case 'x': tok_out->type = CSTRUCT_TYPE_PADDING; tok_out->size = tok_out->count; tok_out->count = 1; return p + 1;
         }
+        
         // 不正なフォーマット文字の場合はNULLを返す
         return NULL;
     }
+    
     // 文字列終端に達した場合はNULLを返す
     return NULL;
 }
@@ -299,7 +306,7 @@ static const char *parse_token(const char *fmt_in, cstruct_token_t *tok_out, cst
  * @param size パディングサイズ
  * @return パック後の次の位置
  */
-void *cstruct_pack_padding(const void *dst, size_t size) {
+void *cstruct_pack_padding(void *dst, size_t size) {
     return (uint8_t *)dst + size;
 }
 
@@ -876,9 +883,53 @@ const void *cstruct_unpack_float64_le(const void *src, double *value) {
  * @return アンパック後の次の位置
  */
 const void *cstruct_unpack_float64_be(const void *src, double *value) {
+    double val;
+    cstruct_load_be(&val, (const uint8_t *)src, sizeof(double));
+    *value = val;
+    return (const uint8_t *)src + sizeof(double);
+}
+
+/**
+ * @brief 型別パック関数 - 文字列
+ * @param dst 出力先バッファ
+ * @param value パックする文字列
+ * @param size 文字列の最大サイズ
+ * @return パック後の次の位置
+ */
+void *cstruct_pack_string(void *dst, const char *value, size_t size) {
+    uint8_t *out = (uint8_t *)dst;
+    size_t len = strlen(value);
+    size_t copy_len = (len < size) ? len : size;
+    
+    // 文字列をコピー
+    memcpy(out, value, copy_len);
+    
+    // 残りをヌルで埋める
+    if (copy_len < size) {
+        memset(out + copy_len, 0, size - copy_len);
+    }
+    
+    return out + size;
+}
+
+/**
+ * @brief 型別アンパック関数 - 文字列
+ * @param src 入力元バッファ
+ * @param value アンパックした文字列を格納する変数へのポインタ
+ * @param size 文字列の最大サイズ
+ * @return アンパック後の次の位置
+ */
+const void *cstruct_unpack_string(const void *src, char *value, size_t size) {
     const uint8_t *in = (const uint8_t *)src;
-    cstruct_load_be(value, in, 8);
-    return in + 8;
+    
+    // 指定サイズ分コピー
+    memcpy(value, in, size);
+    
+    // バッファの最後にヌル終端文字を追加
+    // 注意: ユーザーはサイズ+1のバッファを用意する必要がある
+    value[size] = '\0';
+    
+    return in + size;
 }
 
 /**
@@ -908,120 +959,303 @@ void *cstruct_pack_v(void *dst, size_t dstlen, const char *fmt, va_list args) {
             return NULL;
         }
         
-        if ((size_t)(end - out) < tok.size) {
+        // 全体のサイズチェック
+        if ((size_t)(end - out) < tok.size * tok.count) {
             return NULL;
         }
 
         switch (tok.type) {
             case CSTRUCT_TYPE_PADDING:
-                out = cstruct_pack_padding(out, tok.size);
+                out = cstruct_pack_padding(out, tok.size * tok.count);
                 break;
+                
+            case CSTRUCT_TYPE_STRING: {
+                const char *str = va_arg(args, const char *);
+                out = cstruct_pack_string(out, str, tok.size);
+                break;
+            }
+                
             case CSTRUCT_TYPE_FLOAT32: {
-                float f = (float)va_arg(args, double);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_float32_le(out, f);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const float *arr = va_arg(args, const float *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_float32_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_float32_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_float32_be(out, f);
+                    // 単一値として処理
+                    float f = (float)va_arg(args, double);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_float32_le(out, f);
+                    } else {
+                        out = cstruct_pack_float32_be(out, f);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_FLOAT64: {
-                double d = va_arg(args, double);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_float64_le(out, d);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const double *arr = va_arg(args, const double *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_float64_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_float64_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_float64_be(out, d);
+                    // 単一値として処理
+                    double d = va_arg(args, double);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_float64_le(out, d);
+                    } else {
+                        out = cstruct_pack_float64_be(out, d);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_FLOAT16: {
-                float f = (float)va_arg(args, double);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_float16_le(out, f);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const float *arr = va_arg(args, const float *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_float16_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_float16_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_float16_be(out, f);
+                    // 単一値として処理
+                    float f = (float)va_arg(args, double);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_float16_le(out, f);
+                    } else {
+                        out = cstruct_pack_float16_be(out, f);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT8: {
-                int8_t val = (int8_t)va_arg(args, int);
-                out = cstruct_pack_int8(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const int8_t *arr = va_arg(args, const int8_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        out = cstruct_pack_int8(out, arr[i]);
+                    }
+                } else {
+                    // 単一値として処理
+                    int8_t val = (int8_t)va_arg(args, int);
+                    out = cstruct_pack_int8(out, val);
+                }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT8: {
-                uint8_t val = (uint8_t)va_arg(args, int);
-                out = cstruct_pack_uint8(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const uint8_t *arr = va_arg(args, const uint8_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        out = cstruct_pack_uint8(out, arr[i]);
+                    }
+                } else {
+                    // 単一値として処理
+                    uint8_t val = (uint8_t)va_arg(args, int);
+                    out = cstruct_pack_uint8(out, val);
+                }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT16: {
-                int16_t val = (int16_t)va_arg(args, int);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_int16_le(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const int16_t *arr = va_arg(args, const int16_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_int16_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_int16_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_int16_be(out, val);
+                    // 単一値として処理
+                    int16_t val = (int16_t)va_arg(args, int);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_int16_le(out, val);
+                    } else {
+                        out = cstruct_pack_int16_be(out, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT16: {
-                uint16_t val = (uint16_t)va_arg(args, int);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_uint16_le(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const uint16_t *arr = va_arg(args, const uint16_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_uint16_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_uint16_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_uint16_be(out, val);
+                    // 単一値として処理
+                    uint16_t val = (uint16_t)va_arg(args, int);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_uint16_le(out, val);
+                    } else {
+                        out = cstruct_pack_uint16_be(out, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT32: {
-                int32_t val = va_arg(args, int32_t);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_int32_le(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const int32_t *arr = va_arg(args, const int32_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_int32_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_int32_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_int32_be(out, val);
+                    // 単一値として処理
+                    int32_t val = va_arg(args, int32_t);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_int32_le(out, val);
+                    } else {
+                        out = cstruct_pack_int32_be(out, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT32: {
-                uint32_t val = va_arg(args, uint32_t);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_uint32_le(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const uint32_t *arr = va_arg(args, const uint32_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_uint32_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_uint32_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_uint32_be(out, val);
+                    // 単一値として処理
+                    uint32_t val = va_arg(args, uint32_t);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_uint32_le(out, val);
+                    } else {
+                        out = cstruct_pack_uint32_be(out, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT64: {
-                int64_t val = va_arg(args, int64_t);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_int64_le(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const int64_t *arr = va_arg(args, const int64_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_int64_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_int64_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_int64_be(out, val);
+                    // 単一値として処理
+                    int64_t val = va_arg(args, int64_t);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_int64_le(out, val);
+                    } else {
+                        out = cstruct_pack_int64_be(out, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT64: {
-                uint64_t val = va_arg(args, uint64_t);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_uint64_le(out, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const uint64_t *arr = va_arg(args, const uint64_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_uint64_le(out, arr[i]);
+                        } else {
+                            out = cstruct_pack_uint64_be(out, arr[i]);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_uint64_be(out, val);
+                    // 単一値として処理
+                    uint64_t val = va_arg(args, uint64_t);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_uint64_le(out, val);
+                    } else {
+                        out = cstruct_pack_uint64_be(out, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT128: {
-                const void *src = va_arg(args, const void *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_int128_le(out, src);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const void *arr = va_arg(args, const void *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        const void *elem = (const uint8_t *)arr + (i * 16);
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_int128_le(out, elem);
+                        } else {
+                            out = cstruct_pack_int128_be(out, elem);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_int128_be(out, src);
+                    // 単一値として処理
+                    const void *src = va_arg(args, const void *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_int128_le(out, src);
+                    } else {
+                        out = cstruct_pack_int128_be(out, src);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT128: {
-                const void *src = va_arg(args, const void *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    out = cstruct_pack_uint128_le(out, src);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    const void *arr = va_arg(args, const void *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        const void *elem = (const uint8_t *)arr + (i * 16);
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            out = cstruct_pack_uint128_le(out, elem);
+                        } else {
+                            out = cstruct_pack_uint128_be(out, elem);
+                        }
+                    }
                 } else {
-                    out = cstruct_pack_uint128_be(out, src);
+                    // 単一値として処理
+                    const void *src = va_arg(args, const void *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        out = cstruct_pack_uint128_le(out, src);
+                    } else {
+                        out = cstruct_pack_uint128_be(out, src);
+                    }
                 }
                 break;
             }
@@ -1067,120 +1301,303 @@ const void *cstruct_unpack_v(const void *src, size_t srclen, const char *fmt, va
             return NULL;
         }
         
-        if ((size_t)(end - in) < tok.size) {
+        // 全体のサイズチェック
+        if ((size_t)(end - in) < tok.size * tok.count) {
             return NULL;
         }
 
         switch (tok.type) {
             case CSTRUCT_TYPE_PADDING:
-                in = cstruct_pack_padding(in, tok.size);
+                in += tok.size * tok.count; // パディングはサイズ×回数分スキップする
                 break;
+                
+            case CSTRUCT_TYPE_STRING: {
+                char *str = va_arg(args, char *);
+                in = cstruct_unpack_string(in, str, tok.size);
+                break;
+            }
+                
             case CSTRUCT_TYPE_FLOAT32: {
-                float *f = va_arg(args, float *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_float32_le(in, f);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    float *arr = va_arg(args, float *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_float32_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_float32_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_float32_be(in, f);
+                    // 単一値として処理
+                    float *f = va_arg(args, float *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_float32_le(in, f);
+                    } else {
+                        in = cstruct_unpack_float32_be(in, f);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_FLOAT64: {
-                double *d = va_arg(args, double *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_float64_le(in, d);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    double *arr = va_arg(args, double *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_float64_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_float64_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_float64_be(in, d);
+                    // 単一値として処理
+                    double *d = va_arg(args, double *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_float64_le(in, d);
+                    } else {
+                        in = cstruct_unpack_float64_be(in, d);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_FLOAT16: {
-                float *f = va_arg(args, float *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_float16_le(in, f);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    float *arr = va_arg(args, float *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_float16_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_float16_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_float16_be(in, f);
+                    // 単一値として処理
+                    float *f = va_arg(args, float *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_float16_le(in, f);
+                    } else {
+                        in = cstruct_unpack_float16_be(in, f);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT8: {
-                int8_t *val = va_arg(args, int8_t *);
-                in = cstruct_unpack_int8(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    int8_t *arr = va_arg(args, int8_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        in = cstruct_unpack_int8(in, &arr[i]);
+                    }
+                } else {
+                    // 単一値として処理
+                    int8_t *val = va_arg(args, int8_t *);
+                    in = cstruct_unpack_int8(in, val);
+                }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT8: {
-                uint8_t *val = va_arg(args, uint8_t *);
-                in = cstruct_unpack_uint8(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    uint8_t *arr = va_arg(args, uint8_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        in = cstruct_unpack_uint8(in, &arr[i]);
+                    }
+                } else {
+                    // 単一値として処理
+                    uint8_t *val = va_arg(args, uint8_t *);
+                    in = cstruct_unpack_uint8(in, val);
+                }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT16: {
-                int16_t *val = va_arg(args, int16_t *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_int16_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    int16_t *arr = va_arg(args, int16_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_int16_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_int16_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_int16_be(in, val);
+                    // 単一値として処理
+                    int16_t *val = va_arg(args, int16_t *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_int16_le(in, val);
+                    } else {
+                        in = cstruct_unpack_int16_be(in, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT16: {
-                uint16_t *val = va_arg(args, uint16_t *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_uint16_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    uint16_t *arr = va_arg(args, uint16_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_uint16_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_uint16_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_uint16_be(in, val);
+                    // 単一値として処理
+                    uint16_t *val = va_arg(args, uint16_t *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_uint16_le(in, val);
+                    } else {
+                        in = cstruct_unpack_uint16_be(in, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT32: {
-                int32_t *val = va_arg(args, int32_t *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_int32_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    int32_t *arr = va_arg(args, int32_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_int32_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_int32_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_int32_be(in, val);
+                    // 単一値として処理
+                    int32_t *val = va_arg(args, int32_t *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_int32_le(in, val);
+                    } else {
+                        in = cstruct_unpack_int32_be(in, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT32: {
-                uint32_t *val = va_arg(args, uint32_t *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_uint32_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    uint32_t *arr = va_arg(args, uint32_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_uint32_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_uint32_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_uint32_be(in, val);
+                    // 単一値として処理
+                    uint32_t *val = va_arg(args, uint32_t *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_uint32_le(in, val);
+                    } else {
+                        in = cstruct_unpack_uint32_be(in, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT64: {
-                int64_t *val = va_arg(args, int64_t *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_int64_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    int64_t *arr = va_arg(args, int64_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_int64_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_int64_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_int64_be(in, val);
+                    // 単一値として処理
+                    int64_t *val = va_arg(args, int64_t *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_int64_le(in, val);
+                    } else {
+                        in = cstruct_unpack_int64_be(in, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT64: {
-                uint64_t *val = va_arg(args, uint64_t *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_uint64_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    uint64_t *arr = va_arg(args, uint64_t *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_uint64_le(in, &arr[i]);
+                        } else {
+                            in = cstruct_unpack_uint64_be(in, &arr[i]);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_uint64_be(in, val);
+                    // 単一値として処理
+                    uint64_t *val = va_arg(args, uint64_t *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_uint64_le(in, val);
+                    } else {
+                        in = cstruct_unpack_uint64_be(in, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_INT128: {
-                void *val = va_arg(args, void *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_int128_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    void *arr = va_arg(args, void *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        void *elem = (uint8_t *)arr + (i * 16);
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_int128_le(in, elem);
+                        } else {
+                            in = cstruct_unpack_int128_be(in, elem);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_int128_be(in, val);
+                    // 単一値として処理
+                    void *val = va_arg(args, void *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_int128_le(in, val);
+                    } else {
+                        in = cstruct_unpack_int128_be(in, val);
+                    }
                 }
                 break;
             }
+                
             case CSTRUCT_TYPE_UINT128: {
-                void *val = va_arg(args, void *);
-                if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
-                    in = cstruct_unpack_uint128_le(in, val);
+                if (tok.count > 1) {
+                    // 配列として処理
+                    void *arr = va_arg(args, void *);
+                    for (size_t i = 0; i < tok.count; i++) {
+                        void *elem = (uint8_t *)arr + (i * 16);
+                        if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                            in = cstruct_unpack_uint128_le(in, elem);
+                        } else {
+                            in = cstruct_unpack_uint128_be(in, elem);
+                        }
+                    }
                 } else {
-                    in = cstruct_unpack_uint128_be(in, val);
+                    // 単一値として処理
+                    void *val = va_arg(args, void *);
+                    if (tok.endian == CSTRUCT_ENDIAN_LITTLE) {
+                        in = cstruct_unpack_uint128_le(in, val);
+                    } else {
+                        in = cstruct_unpack_uint128_be(in, val);
+                    }
                 }
                 break;
             }
