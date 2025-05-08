@@ -1,6 +1,6 @@
 # CStruct for Arduino
 
-An Arduino library for packing and unpacking binary data with a simple format string syntax.
+A lightweight, portable Arduino library for packing and unpacking binary data using Python-style format strings.
 
 ## Features
 
@@ -77,8 +77,11 @@ Endianness can be switched at any point in the format string and applies to all 
 | e      | float | 2 | IEEE754 half precision (16-bit floating point) |
 | f      | float | 4 | IEEE754 float32 (32-bit floating point) |
 | d      | double | 8 | IEEE754 float64 (64-bit floating point) |
-| s      | char* | N | String (N bytes). N is optional (defaults to 1 if omitted). |
-| x      | padding | N | N bytes of padding. N is optional (defaults to 1 if omitted). |
+| s      | char* | 1 | Fixed-length string (N bytes). If N is omitted, defaults to 1. |
+| x      | padding | 1 | Skip N bytes. If N is omitted, defaults to 1. |
+
+**Note**: Unlike Python's `struct`, this library allows you to omit the size for `s` and `x`.
+In such cases, it defaults to 1 byte. For example, `"s"` is equivalent to `"1s"`, and `"x"` to `"1x"`.
 
 #### Array Notation
 
