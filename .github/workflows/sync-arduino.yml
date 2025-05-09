@@ -1,0 +1,84 @@
+name: Sync Arduino Repository
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-arduino-repo:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout source repository
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        fetch-depth: 0
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make zip
+    
+    - name: Setup Git
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+    
+    - name: Prepare Arduino package
+      run: |
+        # 一時ディレクトリを作成
+        ARDUINO_TMP_DIR="$GITHUB_WORKSPACE/tmp_arduino_package"
+        mkdir -p "$ARDUINO_TMP_DIR/src"
+        
+        # Arduinoディレクトリからファイルをコピー
+        cp -r "$GITHUB_WORKSPACE/arduino/src/"* "$ARDUINO_TMP_DIR/src/"
+        cp "$GITHUB_WORKSPACE/arduino/keywords.txt" "$ARDUINO_TMP_DIR/"
+        cp "$GITHUB_WORKSPACE/arduino/README.md" "$ARDUINO_TMP_DIR/"
+        cp "$GITHUB_WORKSPACE/arduino/library.properties" "$ARDUINO_TMP_DIR/"
+        
+        # C言語版のファイルもコピー（Arduino版はC言語版に依存しているため）
+        mkdir -p "$ARDUINO_TMP_DIR/src/cstruct"
+        cp "$GITHUB_WORKSPACE/c/cstruct.c" "$ARDUINO_TMP_DIR/src/cstruct/"
+        cp "$GITHUB_WORKSPACE/c/cstruct.h" "$ARDUINO_TMP_DIR/src/cstruct/"
+        
+        # CStruct.cppのインクルードパスを修正
+        sed -i 's|#include "../../c/cstruct.h"|#include "cstruct/cstruct.h"|g' "$ARDUINO_TMP_DIR/src/CStruct.cpp"
+        
+        # Arduinoサンプルコードのコピー
+        if [ -d "$GITHUB_WORKSPACE/arduino/examples" ]; then
+          cp -r "$GITHUB_WORKSPACE/arduino/examples" "$ARDUINO_TMP_DIR/"
+        fi
+        
+        # ライセンスファイルのコピー
+        cp "$GITHUB_WORKSPACE/arduino/LICENSE" "$ARDUINO_TMP_DIR/" || cp "$GITHUB_WORKSPACE/LICENSE" "$ARDUINO_TMP_DIR/"
+    
+    - name: Clone target Arduino repository
+      uses: actions/checkout@v4
+      with:
+        repository: sensignal/cstruct-arduino
+        path: cstruct-arduino
+        token: ${{ secrets.ARDUINO_REPO_TOKEN }}
+    
+    - name: Update Arduino repository
+      run: |
+        # 対象リポジトリのディレクトリに移動
+        cd cstruct-arduino
+        
+        # 既存のファイルを削除（.gitディレクトリを除く）
+        find . -mindepth 1 -maxdepth 1 -not -name ".git" -exec rm -rf {} \;
+        
+        # 一時ディレクトリからファイルをコピー
+        cp -r "$GITHUB_WORKSPACE/tmp_arduino_package/"* .
+        
+        # 変更があるか確認
+        if [[ -n $(git status --porcelain) ]]; then
+          # 変更があればコミット
+          git add .
+          git commit -m "Update Arduino library from main repository"
+          git push
+          echo "Arduino repository updated successfully"
+        else
+          echo "No changes to commit"
+        fi
