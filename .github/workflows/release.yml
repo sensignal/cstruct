@@ -38,7 +38,7 @@ jobs:
         ./scripts/create_package.sh ${{ steps.get_version.outputs.VERSION }}
         
     - name: Upload package
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cstruct-arduino-${{ steps.get_version.outputs.VERSION }}
         path: dist/cstruct-arduino-${{ steps.get_version.outputs.VERSION }}.zip
