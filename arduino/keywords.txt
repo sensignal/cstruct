@@ -28,6 +28,7 @@ packFloat32LE	KEYWORD2
 packFloat32BE	KEYWORD2
 packFloat64LE	KEYWORD2
 packFloat64BE	KEYWORD2
+packString	KEYWORD2
 unpackInt8	KEYWORD2
 unpackUint8	KEYWORD2
 unpackInt16LE	KEYWORD2
@@ -48,3 +49,4 @@ unpackFloat32LE	KEYWORD2
 unpackFloat32BE	KEYWORD2
 unpackFloat64LE	KEYWORD2
 unpackFloat64BE	KEYWORD2
+unpackString	KEYWORD2
